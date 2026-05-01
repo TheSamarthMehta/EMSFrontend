@@ -38,3 +38,5 @@ coverage
 Thumbs.db
 .cursor
 .git-frontend-backup/
+
+.vercel
