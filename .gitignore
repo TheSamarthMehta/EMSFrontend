@@ -37,3 +37,4 @@ coverage
 # OS/Tooling
 Thumbs.db
 .cursor
+.git-frontend-backup/
