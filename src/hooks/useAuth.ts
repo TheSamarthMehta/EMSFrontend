@@ -1,14 +1,13 @@
 import { useAuthContext } from "@/context/AuthContext";
 
+/** Client auth is JWT-only; `user` is always null here — use `useSession` for the signed-in profile. */
 export function useAuth() {
-  const { user, loading, error, signInWithApple, signOut, clearError } = useAuthContext();
-  const isAuthenticated = Boolean(user);
+  const { loading, error, signOut, clearError } = useAuthContext();
   return {
-    user,
+    user: null,
     loading,
     error,
-    isAuthenticated,
-    signInWithApple,
+    isAuthenticated: false,
     signOut,
     clearError,
   };

@@ -1,5 +1,5 @@
 import { api } from "@/api/client";
-import type { FirebaseSessionResponse, VerifyEmailOtpResponse } from "@/types/emailOtp.types";
+import type { VerifyEmailOtpResponse } from "@/types/emailOtp.types";
 import type { AuthResponse, PublicUser } from "@/types/user";
 
 export async function postRegister(body: {
@@ -51,21 +51,5 @@ export async function verifySignInEmailOtp(body: {
   code: string;
 }): Promise<VerifyEmailOtpResponse> {
   const { data } = await api.post<VerifyEmailOtpResponse>("/auth/email-otp/verify", body);
-  return data;
-}
-
-export async function postFirebaseSession(body: {
-  idToken: string;
-  email?: string;
-}): Promise<FirebaseSessionResponse> {
-  const { data } = await api.post<FirebaseSessionResponse>("/auth/firebase-session", body);
-  return data;
-}
-
-export async function postFirebaseSignup(body: {
-  idToken: string;
-  email?: string;
-}): Promise<FirebaseSessionResponse> {
-  const { data } = await api.post<FirebaseSessionResponse>("/auth/firebase-signup", body);
   return data;
 }

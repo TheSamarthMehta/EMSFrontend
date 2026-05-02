@@ -17,7 +17,6 @@ const LoginPage = lazy(() => import("@/pages/LoginPage"));
 const RegisterPage = lazy(() => import("@/pages/RegisterPage"));
 const CompleteProfilePage = lazy(() => import("@/pages/CompleteProfilePage"));
 const VerifyEmailCodePage = lazy(() => import("@/pages/VerifyEmailCodePage"));
-const AuthCallbackPage = lazy(() => import("@/pages/AuthCallbackPage"));
 const DashboardPage = lazy(() => import("@/pages/DashboardPage"));
 const ExpensesPage = lazy(() => import("@/pages/ExpensesPage"));
 const GroupsPage = lazy(() => import("@/pages/GroupsPage"));
@@ -69,7 +68,6 @@ const router = createBrowserRouter(
       <Route path="/register" element={<RegisterPage />} loader={routeLoader} />
       <Route path="/terms" element={<TermsOfServicePage />} loader={routeLoader} />
       <Route path="/goodbye" element={<GoodbyePage />} loader={routeLoader} />
-      <Route path="/auth/callback" element={<AuthCallbackPage />} loader={routeLoader} />
       <Route path="/verify-email-code" element={<VerifyEmailCodePage />} loader={routeLoader} />
       <Route path="/invitations/accept" element={<InviteAcceptPage />} loader={routeLoader} />
       <Route element={<ProtectedLayout />} loader={routeLoader}>

@@ -6,18 +6,15 @@ import { LanguageProvider } from "@/context/LanguageContext";
 import { TooltipProvider } from "@/context/TooltipContext";
 import { PageHelpDock } from "@/components/page-help/PageHelpDock";
 import { TourHost } from "@/components/tour/TourHost";
-import { auth } from "@/firebase/config";
-import { useAuth } from "@/hooks/useAuth";
 import { useBootstrapAppearance } from "@/hooks/useBootstrapAppearance";
 import { useSession } from "@/hooks/useSession";
-import { isEmailOtpVerifiedFor, markEmailOtpPending, markEmailOtpVerified } from "@/utils/emailGate";
+import { isEmailOtpVerifiedFor, markEmailOtpPending } from "@/utils/emailGate";
 
 export function ProtectedLayout() {
-  const { loading: firebaseLoading } = useAuth();
   const { data: user, isPending, isError } = useSession(true);
   const location = useLocation();
 
-  if (firebaseLoading || isPending) {
+  if (isPending) {
     return (
       <div className="flex min-h-svh flex-col gap-4 p-6">
         <Skeleton className="h-10 w-48" />
@@ -30,16 +27,9 @@ export function ProtectedLayout() {
     return <Navigate to="/auth" replace />;
   }
 
-  const firebaseOAuth =
-    auth.currentUser?.providerData.some(
-      (p) => p.providerId === "google.com" || p.providerId === "apple.com"
-    ) ?? false;
-  if (firebaseOAuth && user.email) {
-    markEmailOtpVerified(user.email);
-  }
   const emailGateSatisfied =
     user.isEmailVerified || (user.email ? isEmailOtpVerifiedFor(user.email) : true);
-  if (user.email && !firebaseOAuth && !emailGateSatisfied) {
+  if (user.email && !emailGateSatisfied) {
     markEmailOtpPending(user.email);
     return <Navigate to="/verify-email-code" replace />;
   }

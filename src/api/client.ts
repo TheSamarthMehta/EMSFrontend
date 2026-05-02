@@ -1,5 +1,4 @@
 import axios, { type AxiosError, type InternalAxiosRequestConfig, isAxiosError } from "axios";
-import { auth } from "@/firebase/config";
 import { useAuthStore } from "@/store/authStore";
 
 /** Must match backend mount: `app.use("/api/v1", routes)`. */
@@ -89,10 +88,6 @@ let refreshBlockedUntil = 0;
  * stampede `/auth/refresh-token` (which used to 429 under Strict Mode + 401 retries).
  */
 export async function tryRefreshAccessToken(): Promise<string | null> {
-  if (auth.currentUser) {
-    return null;
-  }
-
   if (Date.now() < refreshBlockedUntil) {
     return null;
   }
@@ -133,8 +128,7 @@ api.interceptors.response.use(
       !original._retry &&
       !url.includes("/auth/login") &&
       !url.includes("/auth/register") &&
-      !url.includes("/auth/refresh-token") &&
-      !auth.currentUser
+      !url.includes("/auth/refresh-token")
     ) {
       original._retry = true;
       const token = await tryRefreshAccessToken();

@@ -23,7 +23,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { APP_NAME } from "@/lib/constants";
-import { useAuth } from "@/hooks/useAuth";
 import { useAuthStore } from "@/store/authStore";
 import type { PublicUser } from "@/types/user";
 import { cn } from "@/lib/utils";
@@ -71,7 +70,6 @@ export function AppLayout({
   const navigate = useNavigate();
   const qc = useQueryClient();
   const setAccessToken = useAuthStore((s) => s.setAccessToken);
-  const { isAuthenticated: isFirebaseAuthenticated, signOut: firebaseSignOut } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
@@ -86,11 +84,11 @@ export function AppLayout({
   }, [location.pathname]);
 
   async function handleLogout() {
-    if (isFirebaseAuthenticated) {
-      await firebaseSignOut();
-      return;
+    try {
+      await postLogout();
+    } catch {
+      /* still clear client */
     }
-    try { await postLogout(); } catch { /* still clear client */ }
     setAccessToken(null);
     clearEmailOtpState();
     await qc.removeQueries({ queryKey: ["session"] });

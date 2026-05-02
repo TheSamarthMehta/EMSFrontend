@@ -1,14 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { getMe } from "@/api/auth";
 import { tryRefreshAccessToken } from "@/api/client";
-import { auth } from "@/firebase/config";
 import { useAuthStore } from "@/store/authStore";
 
 export function useSession(enabled = true) {
-  const accessToken = useAuthStore((s) => s.accessToken);
-
-  const shouldRun =
-    Boolean(enabled) && (Boolean(accessToken) || auth.currentUser === null);
+  const shouldRun = Boolean(enabled);
 
   return useQuery({
     queryKey: ["session"],

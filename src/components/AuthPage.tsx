@@ -14,7 +14,6 @@ import {
   Zap,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { signOut } from "firebase/auth";
 import { z } from "zod";
 import { postLogin, postRegister } from "@/api/auth";
 import AuthBackground from "@/components/AuthBackground";
@@ -24,7 +23,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/useAuth";
 import { useTypewriter } from "@/hooks/useTypewriter";
-import { auth } from "@/firebase/config";
 import { APP_NAME } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/authStore";
@@ -132,11 +130,6 @@ export default function AuthPage({ initialTab = "signin" }: AuthPageProps) {
   const signInMutation = useMutation({
     mutationFn: postLogin,
     onSuccess: async (data) => {
-      try {
-        await signOut(auth);
-      } catch {
-        // Ignore — avoid a stale Firebase OAuth session skipping backend email OTP.
-      }
       setAuthIntent("signin");
       setAccessToken(data.accessToken);
       queryClient.setQueryData(["session"], data.user);
@@ -152,11 +145,6 @@ export default function AuthPage({ initialTab = "signin" }: AuthPageProps) {
   const signUpMutation = useMutation({
     mutationFn: postRegister,
     onSuccess: async (data) => {
-      try {
-        await signOut(auth);
-      } catch {
-        // Ignore — same as email sign-in.
-      }
       setAuthIntent("signup");
       setAccessToken(data.accessToken);
       queryClient.setQueryData(["session"], data.user);

@@ -4,16 +4,9 @@ import { Check, Clock, Loader2, Shield } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { refreshClient } from "@/api/client";
-import {
-  getMe,
-  postFirebaseSession,
-  postFirebaseSignup,
-  sendSignInEmailOtp,
-  verifySignInEmailOtp,
-} from "@/api/auth";
+import { getMe, sendSignInEmailOtp, verifySignInEmailOtp } from "@/api/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useAuth } from "@/hooks/useAuth";
 import { APP_NAME } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import type { PublicUser } from "@/types/user";
@@ -24,10 +17,8 @@ import {
   markEmailOtpPending,
   markEmailOtpVerified,
 } from "@/utils/emailGate";
-import { getIdToken } from "firebase/auth";
-import { auth } from "@/firebase/config";
 import { useAuthStore } from "@/store/authStore";
-import { clearAuthIntent, getAuthIntent } from "@/utils/authIntent";
+import { clearAuthIntent } from "@/utils/authIntent";
 import { getApiErrorMessage } from "@/utils/getApiErrorMessage";
 import { consumePostAuthRedirect } from "@/utils/postAuthRedirect";
 import { toast } from "sonner";
@@ -69,17 +60,16 @@ function ExpenseLogoMark({ className }: { className?: string }) {
 export default function VerifyEmailCodePage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { user: firebaseUser } = useAuth();
   const cachedSessionUser = queryClient.getQueryData<PublicUser>(["session"]);
 
   const pendingEmail = getPendingEmailOtp();
   const resolvedEmail = useMemo(() => {
-    const primary = firebaseUser?.email || cachedSessionUser?.email || pendingEmail || "";
+    const primary = cachedSessionUser?.email || pendingEmail || "";
     return normalizeEmail(primary);
-  }, [cachedSessionUser?.email, firebaseUser?.email, pendingEmail]);
+  }, [cachedSessionUser?.email, pendingEmail]);
   const resolvedName = useMemo(
-    () => firebaseUser?.displayName || cachedSessionUser?.name || "there",
-    [cachedSessionUser?.name, firebaseUser?.displayName]
+    () => cachedSessionUser?.name || "there",
+    [cachedSessionUser?.name]
   );
 
   const [digits, setDigits] = useState<string[]>(Array.from({ length: OTP_LENGTH }, () => ""));
@@ -104,9 +94,7 @@ export default function VerifyEmailCodePage() {
     let cancelled = false;
     const sessionNow = queryClient.getQueryData<PublicUser>(["session"]);
     const hasEmailHint =
-      Boolean(normalizeEmail(firebaseUser?.email || "")) ||
-      Boolean(normalizeEmail(sessionNow?.email || "")) ||
-      Boolean(getPendingEmailOtp());
+      Boolean(normalizeEmail(sessionNow?.email || "")) || Boolean(getPendingEmailOtp());
     if (hasEmailHint) {
       setSessionProbeDone(true);
       return;
@@ -142,7 +130,7 @@ export default function VerifyEmailCodePage() {
     return () => {
       cancelled = true;
     };
-  }, [firebaseUser?.email, navigate, queryClient]);
+  }, [navigate, queryClient]);
 
   useEffect(() => {
     if (!sessionProbeDone || !resolvedEmail) {
@@ -203,17 +191,6 @@ export default function VerifyEmailCodePage() {
     }
     const sessionUser = queryClient.getQueryData<PublicUser>(["session"]);
     if (sessionUser?.isEmailVerified) {
-      return;
-    }
-    const fb = auth.currentUser;
-    const isOAuthUser = fb?.providerData.some(
-      (p) => p.providerId === "google.com" || p.providerId === "apple.com"
-    );
-    if (isOAuthUser) {
-      sentOnceRef.current = true;
-      markEmailOtpVerified(resolvedEmail);
-      const sessionUserNow = queryClient.getQueryData<PublicUser>(["session"]);
-      navigate(nextPathAfterAuth(sessionUserNow), { replace: true });
       return;
     }
     sentOnceRef.current = true;
@@ -278,42 +255,12 @@ export default function VerifyEmailCodePage() {
         code: otpValue,
       });
       const setAccessToken = useAuthStore.getState().setAccessToken;
-      if (verifyResult.accessToken && verifyResult.user) {
-        setAccessToken(verifyResult.accessToken);
-        queryClient.setQueryData(["session"], verifyResult.user);
-      } else if (verifyResult.needsFirebaseSession) {
-        const fbUser = auth.currentUser;
-        if (!fbUser) {
-          setError("No linked app account for this email. Please register with email and password.");
-          return;
-        }
-        const idToken = await getIdToken(fbUser, true);
-        const intent = getAuthIntent();
-        const session =
-          intent === "signup"
-            ? await postFirebaseSignup({
-                idToken,
-                email: resolvedEmail,
-              })
-            : await postFirebaseSession({
-                idToken,
-                email: resolvedEmail,
-              });
-        setAccessToken(session.accessToken);
-        queryClient.setQueryData(["session"], session.user);
-        if (!session.user.isProfileComplete) {
-          markEmailOtpVerified(resolvedEmail);
-          clearAuthIntent();
-          toast.success("Email verified");
-          navigate(nextPathAfterAuth(session.user), { replace: true });
-          return;
-        }
-        setAccessToken(session.accessToken);
-        queryClient.setQueryData(["session"], session.user);
-      } else {
+      if (!verifyResult.accessToken || !verifyResult.user) {
         setError("Unable to start a server session. Please sign in again.");
         return;
       }
+      setAccessToken(verifyResult.accessToken);
+      queryClient.setQueryData(["session"], verifyResult.user);
       const sessionUser = queryClient.getQueryData<PublicUser>(["session"]);
       markEmailOtpVerified(resolvedEmail);
       clearAuthIntent();
