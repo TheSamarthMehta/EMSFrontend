@@ -8,18 +8,18 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { onAuthStateChanged, type User as FirebaseUser } from "firebase/auth";
+import {
+  getIdToken,
+  onAuthStateChanged,
+  signOut,
+  type User as FirebaseUser,
+} from "firebase/auth";
 import { Timestamp, doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLocation, useNavigate } from "react-router-dom";
 import { postLogout } from "@/api/auth";
 import { signInWithApple as firebaseSignInWithApple } from "@/firebase/appleAuth";
 import { auth, db } from "@/firebase/config";
-import { getIdToken } from "firebase/auth";
-import {
-  signInWithGoogle as firebaseSignInWithGoogle,
-  signOutUser,
-} from "@/firebase/googleAuth";
 import { postFirebaseSession } from "@/api/auth";
 import { useAuthStore } from "@/store/authStore";
 import type { AppUser } from "@/types/auth.types";
@@ -51,15 +51,9 @@ interface AuthContextType {
   user: AppUser | null;
   loading: boolean;
   error: string | null;
-  signInWithGoogle: () => Promise<void>;
   signInWithApple: () => Promise<void>;
   signOut: () => Promise<void>;
   clearError: () => void;
-}
-
-interface RichAuthError extends Error {
-  code?: string;
-  redirectUrl?: string;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -124,7 +118,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const location = useLocation();
   const pathnameRef = useRef<string>(location.pathname);
   const isMountedRef = useRef<boolean>(true);
-  const googleAuthInFlightRef = useRef<boolean>(false);
   const [user, setUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -171,7 +164,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         queryClient.removeQueries({ queryKey: ["session"] });
         clearEmailOtpState();
         try {
-          await signOutUser();
+          await signOut(auth);
         } catch {
           // Ignore
         }
@@ -270,76 +263,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [navigate]);
 
-  const handleGoogleSignIn = useCallback(async (): Promise<void> => {
-    if (googleAuthInFlightRef.current) {
-      return;
-    }
-    googleAuthInFlightRef.current = true;
-    setError(null);
-    setLoading(true);
-    try {
-      const appUser = await firebaseSignInWithGoogle();
-      if (!isMountedRef.current) {
-        return;
-      }
-      setUser(appUser);
-      // Immediately hydrate backend session for existing accounts (no OTP step for Google Sign-In).
-      try {
-        const idToken = await getIdToken(auth.currentUser!, true);
-        const session = await postFirebaseSession({
-          idToken,
-          email: appUser.email ?? undefined,
-        });
-        setAccessToken(session.accessToken);
-        if (appUser.email) {
-          // Google already verified email; skip OTP for this provider.
-          markEmailOtpVerified(appUser.email);
-        }
-        navigate(session.user.isProfileComplete ? "/dashboard" : "/complete-profile", {
-          replace: true,
-        });
-        return;
-      } catch (backendError) {
-        const apiError = backendError as {
-          response?: { status?: number; data?: { errorCode?: string; message?: string } };
-        };
-        const status = apiError.response?.status;
-        const errorCode = apiError.response?.data?.errorCode;
-        if (status === 404 || errorCode === "ACCOUNT_NOT_FOUND") {
-          await clearServerSessionState();
-          if (isMountedRef.current) {
-            setError("Account not found for this Google email. Please sign up first.");
-          }
-          await signOutUser();
-          setUser(null);
-          return;
-        }
-        const message = getApiErrorMessage(backendError, "Google sign-in failed");
-        if (isMountedRef.current) {
-          setError(message);
-        }
-        return;
-      }
-    } catch (authError: unknown) {
-      const richError = authError as RichAuthError;
-      if (richError.code === "auth/unauthorized-domain" && richError.redirectUrl) {
-        setError("Redirecting to a mobile-safe test URL for Google auth...");
-        window.location.assign(richError.redirectUrl);
-        return;
-      }
-      const message = firebaseAuthUserMessage(authError, "Google sign-in failed");
-      if (isMountedRef.current) {
-        setError(message);
-      }
-      return;
-    } finally {
-      googleAuthInFlightRef.current = false;
-      if (isMountedRef.current) {
-        setLoading(false);
-      }
-    }
-  }, [clearServerSessionState, navigate, setAccessToken]);
-
   const handleAppleSignIn = useCallback(async (): Promise<void> => {
     setError(null);
     setLoading(true);
@@ -373,7 +296,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (isMountedRef.current) {
             setError("Account not found for this Apple ID. Please sign up first.");
           }
-          await signOutUser();
+          await signOut(auth);
           setUser(null);
           return;
         }
@@ -398,7 +321,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setError(null);
     setLoading(true);
     try {
-      await signOutUser();
+      await signOut(auth);
       clearEmailOtpState();
       setUser(null);
       navigate("/auth", { replace: true });
@@ -415,12 +338,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       loading,
       error,
-      signInWithGoogle: handleGoogleSignIn,
       signInWithApple: handleAppleSignIn,
       signOut: handleSignOut,
       clearError,
     }),
-    [clearError, error, handleAppleSignIn, handleGoogleSignIn, handleSignOut, loading, user]
+    [clearError, error, handleAppleSignIn, handleSignOut, loading, user]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -181,7 +181,7 @@ export function CompleteProfile() {
                   </div>
                 )}
                 <div>
-                  <p className="text-sm font-medium text-white/90">Profile photo synced from Google/Apple</p>
+                  <p className="text-sm font-medium text-white/90">Profile photo synced from your sign-in provider</p>
                   <p className="text-xs text-white/50">You can change this later in settings.</p>
                 </div>
               </div>

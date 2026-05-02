@@ -6,7 +6,6 @@ import {
   Eye,
   EyeOff,
   Lock,
-  Loader2,
   Mail,
   PieChart,
   Shield,
@@ -15,16 +14,14 @@ import {
   Zap,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { GoogleAuthProvider, getIdToken, signInWithPopup, signOut } from "firebase/auth";
+import { signOut } from "firebase/auth";
 import { z } from "zod";
-import { postFirebaseSignup, postLogin, postRegister } from "@/api/auth";
+import { postLogin, postRegister } from "@/api/auth";
 import AuthBackground from "@/components/AuthBackground";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/hooks/useAuth";
 import { useTypewriter } from "@/hooks/useTypewriter";
 import { auth } from "@/firebase/config";
@@ -32,7 +29,7 @@ import { APP_NAME } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/authStore";
 import { setAuthIntent } from "@/utils/authIntent";
-import { markEmailOtpPending, markEmailOtpVerified } from "@/utils/emailGate";
+import { markEmailOtpPending } from "@/utils/emailGate";
 import { getApiErrorMessage } from "@/utils/getApiErrorMessage";
 import { getPasswordStrength } from "@/utils/passwordStrength";
 import {
@@ -41,8 +38,6 @@ import {
   setTermsAcceptedInCurrentTab,
 } from "@/utils/termsAcceptance";
 import { toast } from "sonner";
-import { consumePostAuthRedirect } from "@/utils/postAuthRedirect";
-
 type AuthTab = "signin" | "signup";
 
 interface AuthPageProps {
@@ -80,12 +75,7 @@ export default function AuthPage({ initialTab = "signin" }: AuthPageProps) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const setAccessToken = useAuthStore((state) => state.setAccessToken);
-  const {
-    signInWithGoogle,
-    loading: oauthLoading,
-    error: oauthError,
-    clearError,
-  } = useAuth();
+  const { clearError } = useAuth();
 
   const [tab, setTab] = useState<AuthTab>(initialTab);
 
@@ -100,12 +90,8 @@ export default function AuthPage({ initialTab = "signin" }: AuthPageProps) {
   const [showSignUpPassword, setShowSignUpPassword] = useState<boolean>(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState<boolean>(false);
   const [acceptedTerms, setAcceptedTerms] = useState<boolean>(hasAcceptedTerms());
-  const [googleSignupLoading, setGoogleSignupLoading] = useState<boolean>(false);
-  const [googleAccountMissing, setGoogleAccountMissing] = useState<string | null>(null);
-
   useEffect(() => {
     setTab(initialTab);
-    setGoogleAccountMissing(null);
   }, [initialTab]);
 
   useEffect(() => {
@@ -129,17 +115,6 @@ export default function AuthPage({ initialTab = "signin" }: AuthPageProps) {
       window.removeEventListener("focus", refreshTermsState);
     };
   }, []);
-
-  // If Google sign-in reports "account not found", gently guide user to Sign Up tab.
-  useEffect(() => {
-    if (oauthError && oauthError.toLowerCase().includes("account not found")) {
-      setGoogleAccountMissing(oauthError);
-      setTab("signup");
-      navigate("/register", { replace: true });
-    } else {
-      setGoogleAccountMissing(null);
-    }
-  }, [oauthError, navigate]);
 
   const typewriterPhrases = useMemo(
     () => [
@@ -226,39 +201,6 @@ export default function AuthPage({ initialTab = "signin" }: AuthPageProps) {
       email: parsed.data.email,
       password: parsed.data.password,
     });
-  };
-
-  const onGoogleSignUp = async (): Promise<void> => {
-    if (!acceptedTerms) {
-      toast.error("Please read and accept terms first.");
-      return;
-    }
-    setGoogleSignupLoading(true);
-    clearError();
-    try {
-      const provider = new GoogleAuthProvider();
-      provider.setCustomParameters({ prompt: "select_account" });
-      const result = await signInWithPopup(auth, provider);
-      const idToken = await getIdToken(result.user, true);
-      const email = result.user.email ?? "";
-      const response = await postFirebaseSignup({ idToken, email: email || undefined });
-      setAuthIntent("signup");
-      setAccessToken(response.accessToken);
-      queryClient.setQueryData(["session"], response.user);
-      if (email) {
-        markEmailOtpVerified(email);
-      }
-      toast.success("Google account created");
-      navigate(
-        consumePostAuthRedirect() ||
-          (response.user.isProfileComplete ? "/dashboard" : "/complete-profile"),
-        { replace: true }
-      );
-    } catch (error: unknown) {
-      toast.error(getMessage(error, "Google sign-up failed"));
-    } finally {
-      setGoogleSignupLoading(false);
-    }
   };
 
   return (
@@ -481,68 +423,12 @@ export default function AuthPage({ initialTab = "signin" }: AuthPageProps) {
                       <Button
                         type="button"
                         onClick={onSignIn}
-                        disabled={signInMutation.isPending || oauthLoading}
+                        disabled={signInMutation.isPending}
                         className="h-9 w-full text-xs shadow-md"
                       >
                         {signInMutation.isPending ? "Signing in…" : "Sign In"}
                       </Button>
 
-                      {oauthError ? (
-                        <Alert variant="destructive" className="border-red-500/20 bg-red-500/10">
-                          <AlertDescription className="text-xs text-red-400">
-                            {oauthError}
-                          </AlertDescription>
-                        </Alert>
-                      ) : null}
-
-                      <div className="relative py-2">
-                        <Separator className="bg-white/10" />
-                        <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-[#0a0a12] px-3 text-[11px] font-medium uppercase tracking-wider text-white/35">
-                          or continue with
-                        </span>
-                      </div>
-
-                      <div className="grid gap-2.5">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() => {
-                            clearError();
-                            setAuthIntent("signin");
-                            void signInWithGoogle();
-                          }}
-                          disabled={oauthLoading}
-                          className="h-9 w-full justify-center rounded-md border-white/10 bg-white/[0.04] text-xs text-white/65 transition-all hover:border-indigo-400/25 hover:bg-white/[0.08] hover:text-white"
-                        >
-                          <span className="flex w-full items-center justify-center">
-                            <span className="mr-2.5 inline-flex h-5 w-5 items-center justify-center">
-                              {oauthLoading ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                <svg viewBox="0 0 24 24" className="block h-[17px] w-[17px] shrink-0" aria-hidden>
-                                  <path
-                                    fill="#4285F4"
-                                    d="M23.49 12.27c0-.79-.07-1.55-.2-2.27H12v4.3h6.45a5.52 5.52 0 0 1-2.39 3.62v3h3.86c2.26-2.08 3.57-5.15 3.57-8.65z"
-                                  />
-                                  <path
-                                    fill="#34A853"
-                                    d="M12 24c3.24 0 5.96-1.07 7.94-2.9l-3.86-3c-1.07.72-2.43 1.15-4.08 1.15-3.13 0-5.79-2.11-6.74-4.95h-3.98v3.09A12 12 0 0 0 12 24z"
-                                  />
-                                  <path
-                                    fill="#FBBC05"
-                                    d="M5.26 14.3A7.2 7.2 0 0 1 4.88 12c0-.8.14-1.58.38-2.3V6.61H1.28A12 12 0 0 0 0 12c0 1.94.46 3.78 1.28 5.39l3.98-3.09z"
-                                  />
-                                  <path
-                                    fill="#EA4335"
-                                    d="M12 4.75c1.76 0 3.33.61 4.57 1.8l3.42-3.42C17.95 1.24 15.23 0 12 0A12 12 0 0 0 1.28 6.61L5.26 9.7c.95-2.84 3.61-4.95 6.74-4.95z"
-                                  />
-                                </svg>
-                              )}
-                            </span>
-                            <span className="leading-none">Continue with Google</span>
-                          </span>
-                        </Button>
-                      </div>
                     </motion.div>
                   ) : (
                     <motion.div
@@ -706,11 +592,6 @@ export default function AuthPage({ initialTab = "signin" }: AuthPageProps) {
                           </a>
                         </Label>
                       </div>
-                      {googleAccountMissing && (
-                        <p className="text-xs font-medium text-amber-300/90">
-                          {googleAccountMissing}
-                        </p>
-                      )}
                       <Button
                         type="button"
                         onClick={onSignUp}
@@ -720,50 +601,6 @@ export default function AuthPage({ initialTab = "signin" }: AuthPageProps) {
                         {signUpMutation.isPending ? "Creating account…" : "Create account"}
                       </Button>
 
-                      <div className="relative py-2">
-                        <Separator className="bg-white/10" />
-                        <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-[#0a0a12] px-3 text-[11px] font-medium uppercase tracking-wider text-white/35">
-                          or sign up with
-                        </span>
-                      </div>
-
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => {
-                          void onGoogleSignUp();
-                        }}
-                        disabled={googleSignupLoading}
-                        className="h-9 w-full justify-center rounded-md border-white/10 bg-white/[0.04] text-xs text-white/65 transition-all hover:border-indigo-400/25 hover:bg-white/[0.08] hover:text-white"
-                      >
-                        <span className="flex w-full items-center justify-center">
-                          <span className="mr-2.5 inline-flex h-5 w-5 items-center justify-center">
-                            {googleSignupLoading ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <svg viewBox="0 0 24 24" className="block h-[17px] w-[17px] shrink-0" aria-hidden>
-                                <path
-                                  fill="#4285F4"
-                                  d="M23.49 12.27c0-.79-.07-1.55-.2-2.27H12v4.3h6.45a5.52 5.52 0 0 1-2.39 3.62v3h3.86c2.26-2.08 3.57-5.15 3.57-8.65z"
-                                />
-                                <path
-                                  fill="#34A853"
-                                  d="M12 24c3.24 0 5.96-1.07 7.94-2.9l-3.86-3c-1.07.72-2.43 1.15-4.08 1.15-3.13 0-5.79-2.11-6.74-4.95h-3.98v3.09A12 12 0 0 0 12 24z"
-                                />
-                                <path
-                                  fill="#FBBC05"
-                                  d="M5.26 14.3A7.2 7.2 0 0 1 4.88 12c0-.8.14-1.58.38-2.3V6.61H1.28A12 12 0 0 0 0 12c0 1.94.46 3.78 1.28 5.39l3.98-3.09z"
-                                />
-                                <path
-                                  fill="#EA4335"
-                                  d="M12 4.75c1.76 0 3.33.61 4.57 1.8l3.42-3.42C17.95 1.24 15.23 0 12 0A12 12 0 0 0 1.28 6.61L5.26 9.7c.95-2.84 3.61-4.95 6.74-4.95z"
-                                />
-                              </svg>
-                            )}
-                          </span>
-                          <span className="leading-none">Continue with Google</span>
-                        </span>
-                      </Button>
                     </motion.div>
                   )}
                 </AnimatePresence>
