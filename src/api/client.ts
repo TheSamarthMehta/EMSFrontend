@@ -2,13 +2,45 @@ import axios, { type AxiosError, type InternalAxiosRequestConfig, isAxiosError }
 import { auth } from "@/firebase/config";
 import { useAuthStore } from "@/store/authStore";
 
+/** Must match backend mount: `app.use("/api/v1", routes)`. */
+const API_V1_PREFIX = "/api/v1";
+
+/**
+ * Fixes common production misconfigurations of `VITE_API_URL`, e.g.
+ * `https://host/v1/api` (wrong) → `https://host/api/v1`, or bare origin → `/api/v1`.
+ */
+function normalizeConfiguredApiBaseUrl(input: string): string {
+  const trimmed = input.trim().replace(/\/+$/, "");
+  try {
+    const parsed = new URL(trimmed);
+    let path = parsed.pathname.replace(/\/+$/, "") || "";
+    if (path.endsWith("/v1/api")) {
+      path = `${path.slice(0, -"/v1/api".length)}${API_V1_PREFIX}`;
+    } else if (path.includes("/v1/api/")) {
+      path = path.replace(/\/v1\/api\//g, `${API_V1_PREFIX}/`);
+    }
+    if (path === "" || path === "/") {
+      parsed.pathname = API_V1_PREFIX;
+    } else if (path === "/api") {
+      parsed.pathname = API_V1_PREFIX;
+    } else {
+      parsed.pathname = path;
+    }
+    return parsed.toString().replace(/\/+$/, "");
+  } catch {
+    return trimmed;
+  }
+}
+
 function resolveApiBaseUrl(): string {
-  const configured = import.meta.env.VITE_API_URL?.replace(/\/$/, "");
+  const raw = import.meta.env.VITE_API_URL?.trim();
   const fallback = `${window.location.protocol}//${window.location.hostname}:5000/api/v1`;
   const isDev = import.meta.env.DEV;
-  if (!configured) {
+  if (!raw) {
     return fallback;
   }
+
+  const configured = normalizeConfiguredApiBaseUrl(raw);
 
   try {
     const parsed = new URL(configured);
@@ -20,7 +52,7 @@ function resolveApiBaseUrl(): string {
       /^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(parsed.hostname);
     if (isDev && isLocalLikeConfigured) {
       parsed.hostname = window.location.hostname;
-      return parsed.toString().replace(/\/$/, "");
+      return normalizeConfiguredApiBaseUrl(parsed.toString());
     }
     return configured;
   } catch {
