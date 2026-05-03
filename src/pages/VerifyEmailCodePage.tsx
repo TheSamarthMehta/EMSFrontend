@@ -11,6 +11,7 @@ import { APP_NAME } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import type { PublicUser } from "@/types/user";
 import {
+  consumePendingRegistrationOtpMeta,
   getPendingEmailOtp,
   hasPendingEmailOtpFor,
   isEmailOtpVerifiedFor,
@@ -19,7 +20,7 @@ import {
 } from "@/utils/emailGate";
 import { useAuthStore } from "@/store/authStore";
 import { clearAuthIntent } from "@/utils/authIntent";
-import { getApiErrorMessage } from "@/utils/getApiErrorMessage";
+import { getApiErrorMessage, getApiErrorResendAfterSeconds } from "@/utils/getApiErrorMessage";
 import { consumePostAuthRedirect } from "@/utils/postAuthRedirect";
 import { toast } from "sonner";
 
@@ -32,8 +33,7 @@ function nextPathAfterAuth(sessionUser: PublicUser | undefined | null): string {
 }
 
 const OTP_LENGTH = 6;
-/** Must match backend `OTP_TTL_MINUTES` (email + server). */
-const EMAIL_CODE_TTL_MINUTES = 10;
+const DEFAULT_OTP_TTL_MINUTES = 5;
 
 function normalizeEmail(value: string): string {
   return value.trim().toLowerCase();
@@ -71,9 +71,12 @@ export default function VerifyEmailCodePage() {
     () => cachedSessionUser?.name || "there",
     [cachedSessionUser?.name]
   );
+  const [welcomeName, setWelcomeName] = useState<string | null>(null);
+  const displayName = welcomeName?.trim() || resolvedName;
 
   const [digits, setDigits] = useState<string[]>(Array.from({ length: OTP_LENGTH }, () => ""));
   const [countdown, setCountdown] = useState<number>(30);
+  const [ttlMinutes, setTtlMinutes] = useState<number>(DEFAULT_OTP_TTL_MINUTES);
   const [isSending, setIsSending] = useState<boolean>(false);
   const [isVerifying, setIsVerifying] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -166,19 +169,28 @@ export default function VerifyEmailCodePage() {
     try {
       const result = await sendSignInEmailOtp({
         email: resolvedEmail,
-        name: resolvedName,
+        name: displayName,
       });
       setMailHint(result.emailMasked);
-      setCountdown(30);
+      setCountdown(Math.max(0, result.resendAfterSeconds));
+      setTtlMinutes(Math.max(1, Math.ceil(result.expiresInSeconds / 60)));
       setDigits(Array.from({ length: OTP_LENGTH }, () => ""));
       inputRefs.current[0]?.focus();
+      const deliveredInbox =
+        result.deliveryMode === "smtp" || result.deliveryMode === "resend";
       toast.success("Verification code sent", {
-        description: `Check ${result.emailMasked}`,
+        description: deliveredInbox
+          ? `Check ${result.emailMasked} — the code was sent to that inbox.`
+          : "The server is not sending real email yet (set RESEND_API_KEY or SMTP_* in the API .env). Check server logs or the dev preview toast.",
       });
       if (result.previewCode) {
         toast.info(`Dev code: ${result.previewCode}`);
       }
     } catch (sendError: unknown) {
+      const wait = getApiErrorResendAfterSeconds(sendError);
+      if (wait != null) {
+        setCountdown(wait);
+      }
       setError(getApiErrorMessage(sendError, "Unable to send code"));
     } finally {
       setIsSending(false);
@@ -194,8 +206,18 @@ export default function VerifyEmailCodePage() {
       return;
     }
     sentOnceRef.current = true;
+    const meta = consumePendingRegistrationOtpMeta();
+    if (meta && normalizeEmail(meta.email) === resolvedEmail) {
+      setMailHint(meta.emailMasked);
+      setCountdown(Math.max(0, meta.resendCooldownSeconds));
+      setTtlMinutes(Math.max(1, meta.ttlMinutes || DEFAULT_OTP_TTL_MINUTES));
+      if (meta.name?.trim()) {
+        setWelcomeName(meta.name.trim());
+      }
+      return;
+    }
     void sendCode();
-  }, [navigate, queryClient, resolvedEmail, sessionProbeDone]);
+  }, [queryClient, resolvedEmail, sessionProbeDone]);
 
   const otpValue = useMemo(() => digits.join(""), [digits]);
 
@@ -322,7 +344,7 @@ export default function VerifyEmailCodePage() {
             <div className="mt-4 h-px w-full bg-[#1f2b45]" aria-hidden />
 
             <p className="mt-4 text-xs leading-[1.6] text-slate-200 sm:text-sm">
-              Hi {resolvedName}, welcome back! We received a request to sign in to your {APP_NAME}{" "}
+              Hi {displayName}, welcome back! We received a request to sign in to your {APP_NAME}{" "}
               account. Use the one-time code below to complete your login.
             </p>
             <p className="mt-2 text-xs text-slate-400">
@@ -361,7 +383,7 @@ export default function VerifyEmailCodePage() {
               <div className="mt-5 flex items-center justify-center gap-2">
                 <Clock className="h-[18px] w-[18px] shrink-0 text-[#f59e0b]" strokeWidth={1.75} aria-hidden />
                 <span className="text-[13px] font-semibold text-[#f59e0b]">
-                  Expires in {EMAIL_CODE_TTL_MINUTES} minutes
+                  Expires in {ttlMinutes} minutes
                 </span>
               </div>
             </div>

@@ -14,6 +14,7 @@ import {
   Zap,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { isAxiosError } from "axios";
 import { z } from "zod";
 import { postLogin, postRegister } from "@/api/auth";
 import AuthBackground from "@/components/AuthBackground";
@@ -27,14 +28,22 @@ import { APP_NAME } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/authStore";
 import { setAuthIntent } from "@/utils/authIntent";
-import { markEmailOtpPending } from "@/utils/emailGate";
-import { getApiErrorMessage } from "@/utils/getApiErrorMessage";
+import {
+  formatAllowedDomainsForMessage,
+  getAllowedEmailDomains,
+  hasEmailDomainRestriction,
+  isEmailDomainAllowed,
+  emailDomainNotAllowedMessage,
+} from "@/utils/allowedEmailDomains";
+import { markEmailOtpPending, setPendingRegistrationOtpMeta } from "@/utils/emailGate";
+import { getApiErrorCode, getApiErrorMessage } from "@/utils/getApiErrorMessage";
 import { getPasswordStrength } from "@/utils/passwordStrength";
 import {
   TERMS_ACCEPTANCE_EVENT_KEY,
   hasAcceptedTerms,
   setTermsAcceptedInCurrentTab,
 } from "@/utils/termsAcceptance";
+import { isAuthResponse, isRegisterPendingVerification } from "@/types/user";
 import { toast } from "sonner";
 type AuthTab = "signin" | "signup";
 
@@ -42,15 +51,29 @@ interface AuthPageProps {
   initialTab?: AuthTab;
 }
 
+const authEmailSchema = z
+  .string()
+  .trim()
+  .min(1, "Email is required")
+  .email("Enter a valid email")
+  .superRefine((value, ctx) => {
+    if (!isEmailDomainAllowed(value)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: emailDomainNotAllowedMessage(),
+      });
+    }
+  });
+
 const signInSchema = z.object({
-  email: z.string().email("Enter a valid email"),
+  email: authEmailSchema,
   password: z.string().min(1, "Password is required"),
 });
 
 const signUpSchema = z
   .object({
     name: z.string().trim().min(1, "Name is required").max(80, "Name is too long"),
-    email: z.string().email("Enter a valid email"),
+    email: authEmailSchema,
     password: z
       .string()
       .min(8, "At least 8 characters")
@@ -127,6 +150,21 @@ export default function AuthPage({ initialTab = "signin" }: AuthPageProps) {
 
   const strength = useMemo(() => getPasswordStrength(signUpPassword), [signUpPassword]);
 
+  const emailPlaceholder = useMemo(() => {
+    const domains = getAllowedEmailDomains();
+    if (!domains?.length) {
+      return "you@company.com";
+    }
+    return `you@${domains[0]}`;
+  }, []);
+
+  const allowedDomainsCaption = useMemo(() => {
+    if (!hasEmailDomainRestriction()) {
+      return null;
+    }
+    return formatAllowedDomainsForMessage();
+  }, []);
+
   const signInMutation = useMutation({
     mutationFn: postLogin,
     onSuccess: async (data) => {
@@ -137,7 +175,15 @@ export default function AuthPage({ initialTab = "signin" }: AuthPageProps) {
       toast.success("Welcome back");
       navigate("/verify-email-code", { replace: true });
     },
-    onError: (error: unknown) => {
+    onError: (error: unknown, variables: { email: string; password: string }) => {
+      if (isAxiosError(error) && getApiErrorCode(error) === "EMAIL_NOT_VERIFIED") {
+        markEmailOtpPending(variables.email.trim().toLowerCase());
+        toast.error("Email not verified yet", {
+          description: "We sent you to the code screen — check your inbox or resend a code.",
+        });
+        navigate("/verify-email-code", { replace: true });
+        return;
+      }
       toast.error(getMessage(error, "Login failed"));
     },
   });
@@ -145,12 +191,33 @@ export default function AuthPage({ initialTab = "signin" }: AuthPageProps) {
   const signUpMutation = useMutation({
     mutationFn: postRegister,
     onSuccess: async (data) => {
-      setAuthIntent("signup");
-      setAccessToken(data.accessToken);
-      queryClient.setQueryData(["session"], data.user);
-      markEmailOtpPending(data.user.email);
-      toast.success("Account created");
-      navigate("/verify-email-code", { replace: true });
+      if (isRegisterPendingVerification(data)) {
+        setAuthIntent("signup");
+        setPendingRegistrationOtpMeta({
+          email: data.email,
+          name: data.name,
+          emailMasked: data.emailMasked,
+          resendCooldownSeconds: data.resendAfterSeconds,
+          ttlMinutes: Math.max(1, Math.ceil(data.expiresInSeconds / 60)),
+        });
+        markEmailOtpPending(data.email);
+        toast.success("Check your email", {
+          description: `We sent a code to ${data.emailMasked}. Enter it to finish setting up your account.`,
+        });
+        if (data.previewCode) {
+          toast.info(`Dev code: ${data.previewCode}`);
+        }
+        navigate("/verify-email-code", { replace: true });
+        return;
+      }
+      if (isAuthResponse(data)) {
+        setAuthIntent("signup");
+        setAccessToken(data.accessToken);
+        queryClient.setQueryData(["session"], data.user);
+        markEmailOtpPending(data.user.email);
+        toast.success("Account created");
+        navigate("/verify-email-code", { replace: true });
+      }
     },
     onError: (error: unknown) => {
       toast.error(getMessage(error, "Registration failed"));
@@ -342,8 +409,14 @@ export default function AuthPage({ initialTab = "signin" }: AuthPageProps) {
                       animate={{ opacity: 1, x: 0 }}
                       exit={{ opacity: 0, x: 16 }}
                       transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-                      className="space-y-3"
                     >
+                      <form
+                        className="space-y-3"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          onSignIn();
+                        }}
+                      >
                       <div className="space-y-1.5">
                         <Label variant="onDark" htmlFor="signin-email">
                           Email
@@ -358,13 +431,18 @@ export default function AuthPage({ initialTab = "signin" }: AuthPageProps) {
                             id="signin-email"
                             type="email"
                             autoComplete="email"
-                            placeholder="you@company.com"
+                            placeholder={emailPlaceholder}
                             value={signInEmail}
                             onChange={(event) => setSignInEmail(event.target.value)}
                             variant="onDark"
                             className="pl-10 pr-11 shadow-inner shadow-black/20"
                           />
                         </div>
+                        {allowedDomainsCaption ? (
+                          <p className="text-[11px] leading-snug text-indigo-200/55">
+                            Allowed email domains: {allowedDomainsCaption}
+                          </p>
+                        ) : null}
                       </div>
 
                       <div className="space-y-1.5">
@@ -409,14 +487,13 @@ export default function AuthPage({ initialTab = "signin" }: AuthPageProps) {
                       </div>
 
                       <Button
-                        type="button"
-                        onClick={onSignIn}
+                        type="submit"
                         disabled={signInMutation.isPending}
                         className="h-9 w-full text-xs shadow-md"
                       >
                         {signInMutation.isPending ? "Signing in…" : "Sign In"}
                       </Button>
-
+                      </form>
                     </motion.div>
                   ) : (
                     <motion.div
@@ -425,8 +502,14 @@ export default function AuthPage({ initialTab = "signin" }: AuthPageProps) {
                       animate={{ opacity: 1, x: 0 }}
                       exit={{ opacity: 0, x: -16 }}
                       transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-                      className="space-y-3"
                     >
+                      <form
+                        className="space-y-3"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          onSignUp();
+                        }}
+                      >
                       <div className="space-y-1.5">
                         <Label variant="onDark" htmlFor="signup-name">
                           Full name
@@ -464,13 +547,18 @@ export default function AuthPage({ initialTab = "signin" }: AuthPageProps) {
                             id="signup-email"
                             type="email"
                             autoComplete="email"
-                            placeholder="you@company.com"
+                            placeholder={emailPlaceholder}
                             value={signUpEmail}
                             onChange={(event) => setSignUpEmail(event.target.value)}
                             variant="onDark"
                             className="pl-10 pr-11 shadow-inner shadow-black/20"
                           />
                         </div>
+                        {allowedDomainsCaption ? (
+                          <p className="text-[11px] leading-snug text-indigo-200/55">
+                            Allowed email domains: {allowedDomainsCaption}
+                          </p>
+                        ) : null}
                       </div>
 
                       <div className="space-y-1.5">
@@ -581,14 +669,13 @@ export default function AuthPage({ initialTab = "signin" }: AuthPageProps) {
                         </Label>
                       </div>
                       <Button
-                        type="button"
-                        onClick={onSignUp}
+                        type="submit"
                         disabled={signUpMutation.isPending}
                         className="h-9 w-full text-xs shadow-md"
                       >
                         {signUpMutation.isPending ? "Creating account…" : "Create account"}
                       </Button>
-
+                      </form>
                     </motion.div>
                   )}
                 </AnimatePresence>

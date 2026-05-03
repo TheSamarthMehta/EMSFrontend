@@ -7,7 +7,6 @@ import {
   ArrowDownRight,
   ArrowUpRight,
   ChevronDown,
-  Database,
   Loader2,
   TrendingUp,
   Wand2,
@@ -29,7 +28,6 @@ import {
   YAxis,
 } from "recharts";
 import { postExpense } from "@/api/expenses";
-import { postDashboardSeedDemo } from "@/api/dashboard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -97,9 +95,6 @@ function categoryLabel(id: string): string {
   return category.label;
 }
 
-const showDemoSeed =
-  import.meta.env.DEV || import.meta.env.VITE_SHOW_DEMO_SEED === "true";
-
 const cardShell =
   "rounded-[var(--radius-card)] border border-border bg-card shadow-[var(--soft-shadow)] hover:border-white/12 hover:shadow-[var(--soft-shadow-hover)]";
 const chartBg = "rounded-[var(--radius)] border border-border bg-card";
@@ -165,19 +160,6 @@ export default function DashboardPage() {
   /** Top 6 visible + "Other" bucket — keeps the donut readable past ~7 categories. */
   const pieGrouped = useMemo(() => groupTopN(pieRaw, 6), [pieRaw]);
   const pieData = pieGrouped.data;
-
-  const seedMut = useMutation({
-    mutationFn: postDashboardSeedDemo,
-    onSuccess: async (res) => {
-      toast.success(
-        `Added ${res.expensesCreated} expenses and ${res.incomesCreated} income entries`
-      );
-      await qc.invalidateQueries({ queryKey: ["dashboard"] });
-    },
-    onError: (e: unknown) => {
-      toast.error(getApiErrorMessage(e, "Could not load sample data"));
-    },
-  });
 
   const quickMut = useMutation({
     mutationFn: () =>
@@ -342,30 +324,15 @@ export default function DashboardPage() {
               numberOfMonths={2}
             />
           </div>
-          <div className="inline-flex overflow-hidden rounded-md shadow-sm">
-            <Button
-              id="add-expense-btn"
-              type="button"
-              size="sm"
-              className="h-7 rounded-r-none px-2.5 text-[11px] transition-shadow duration-200 hover:shadow-md"
-              onClick={() => navigate("/expenses")}
-            >
-              + Add Expense
-            </Button>
-            {showDemoSeed ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="text-muted-foreground h-7 rounded-l-none border-l border-border/80 bg-muted/40 px-2 text-[11px] transition-all duration-200 hover:bg-muted hover:text-foreground"
-                disabled={seedMut.isPending}
-                onClick={() => seedMut.mutate()}
-              >
-                <Database className="mr-0.5 size-3" />
-                Load sample
-              </Button>
-            ) : null}
-          </div>
+          <Button
+            id="add-expense-btn"
+            type="button"
+            size="sm"
+            className="h-7 px-2.5 text-[11px] shadow-sm transition-shadow duration-200 hover:shadow-md"
+            onClick={() => navigate("/expenses")}
+          >
+            + Add Expense
+          </Button>
         </div>
       </div>
 
@@ -741,13 +708,8 @@ export default function DashboardPage() {
             {pieData.length === 0 ? (
               <div className="flex h-[240px] flex-col items-center justify-center gap-3 text-center">
                 <p className="text-muted-foreground max-w-xs text-xs">
-                  Add expenses or load sample data to see the breakdown.
+                  Add expenses to see the breakdown.
                 </p>
-                {showDemoSeed ? (
-                  <Button type="button" variant="secondary" size="sm" onClick={() => seedMut.mutate()}>
-                    Load sample data
-                  </Button>
-                ) : null}
               </div>
             ) : (
               <div className="grid items-center gap-3 sm:grid-cols-[180px_minmax(0,1fr)]">
@@ -985,7 +947,7 @@ export default function DashboardPage() {
         <CardContent className="px-0 pb-0 pt-0">
           {recentTransactions.length === 0 ? (
             <p className="text-muted-foreground rounded-lg border border-dashed border-border/80 bg-muted/20 px-4 py-10 text-center text-[13px]">
-              No transactions yet — add an expense or load sample data to populate this list.
+              No transactions yet — add an expense to populate this list.
             </p>
           ) : (
             <>

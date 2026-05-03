@@ -1,13 +1,13 @@
 import { api } from "@/api/client";
 import type { VerifyEmailOtpResponse } from "@/types/emailOtp.types";
-import type { AuthResponse, PublicUser } from "@/types/user";
+import type { AuthResponse, PublicUser, RegisterResponse } from "@/types/user";
 
 export async function postRegister(body: {
   name: string;
   email: string;
   password: string;
-}): Promise<AuthResponse> {
-  const { data } = await api.post<AuthResponse>("/auth/register", body);
+}): Promise<RegisterResponse> {
+  const { data } = await api.post<RegisterResponse>("/auth/register", body);
   return data;
 }
 
@@ -31,11 +31,15 @@ export async function getMe(): Promise<PublicUser> {
 export interface SendEmailOtpResponse {
   message: string;
   expiresInSeconds: number;
+  resendAfterSeconds: number;
   email: string;
   emailMasked: string;
-  deliveryMode: "smtp" | "log-only";
+  /** `resend` = sent via Resend API; `smtp` = nodemailer; `log-only` = not delivered. */
+  deliveryMode: "smtp" | "resend" | "log-only";
   previewCode?: string;
+  /** True when the server has Resend or SMTP configured for transactional mail. */
   smtpConfigured: boolean;
+  otpStorage?: "memory" | "mongo";
 }
 
 export async function sendSignInEmailOtp(body: {

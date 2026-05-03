@@ -1,5 +1,31 @@
 const EMAIL_OTP_PENDING_KEY = "ems_email_otp_pending";
 const EMAIL_OTP_VERIFIED_KEY = "ems_email_otp_verified";
+const PENDING_REG_OTP_META_KEY = "ems_pending_reg_otp_meta";
+
+export type PendingRegistrationOtpMeta = {
+  email: string;
+  name?: string;
+  emailMasked: string;
+  resendCooldownSeconds: number;
+  ttlMinutes: number;
+};
+
+export function setPendingRegistrationOtpMeta(meta: PendingRegistrationOtpMeta): void {
+  sessionStorage.setItem(PENDING_REG_OTP_META_KEY, JSON.stringify(meta));
+}
+
+export function consumePendingRegistrationOtpMeta(): PendingRegistrationOtpMeta | null {
+  const raw = sessionStorage.getItem(PENDING_REG_OTP_META_KEY);
+  sessionStorage.removeItem(PENDING_REG_OTP_META_KEY);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as PendingRegistrationOtpMeta;
+    if (!parsed?.email || !parsed.emailMasked) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
 
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
