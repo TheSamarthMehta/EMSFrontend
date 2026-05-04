@@ -293,16 +293,10 @@ export default function GroupDetailPage() {
         inviteeEmail: values.inviteeEmail?.trim() || undefined,
         inviteeUsername: values.inviteeUsername?.trim() || undefined,
       }),
-    onSuccess: async (data) => {
+    onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ["group-invites", groupId] });
       await qc.invalidateQueries({ queryKey: ["my-pending-group-invites"] });
-      if (data.emailDelivered === false) {
-        toast.success("Invite saved", {
-          description: "Email was not delivered. Configure RESEND_API_KEY or SMTP in the API server.",
-        });
-      } else {
-        toast.success("Invite sent");
-      }
+      toast.success("Invite sent");
       inviteForm.reset();
       setInviteOpen(false);
     },
@@ -313,16 +307,10 @@ export default function GroupDetailPage() {
 
   const resendInviteMut = useMutation({
     mutationFn: (inviteId: string) => postResendGroupInvite(groupId!, inviteId),
-    onSuccess: async (data) => {
+    onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ["group-invites", groupId] });
       await qc.invalidateQueries({ queryKey: ["my-pending-group-invites"] });
-      if (data.emailDelivered === false) {
-        toast.message("Invite updated, but email was not delivered.", {
-          description: "Check server email configuration.",
-        });
-      } else {
-        toast.success("Invitation email resent");
-      }
+      toast.success("Invitation email resent");
     },
     onError: (e: unknown) => toast.error(getApiErrorMessage(e, "Could not resend invite")),
   });

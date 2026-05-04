@@ -34,12 +34,6 @@ export interface SendEmailOtpResponse {
   resendAfterSeconds: number;
   email: string;
   emailMasked: string;
-  /** `resend` = sent via Resend API; `smtp` = nodemailer; `log-only` = not delivered. */
-  deliveryMode: "smtp" | "resend" | "log-only";
-  previewCode?: string;
-  /** True when the server has Resend or SMTP configured for transactional mail. */
-  smtpConfigured: boolean;
-  otpStorage?: "memory" | "mongo";
 }
 
 export async function sendSignInEmailOtp(body: {

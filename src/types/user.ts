@@ -35,10 +35,6 @@ export interface RegisterPendingVerificationResponse {
   message: string;
   expiresInSeconds: number;
   resendAfterSeconds: number;
-  deliveryMode: "smtp" | "resend" | "log-only";
-  smtpConfigured: boolean;
-  previewCode?: string;
-  otpStorage?: "memory" | "mongo";
 }
 
 export type RegisterResponse = AuthResponse | RegisterPendingVerificationResponse;

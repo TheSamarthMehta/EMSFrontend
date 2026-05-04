@@ -204,9 +204,6 @@ export default function AuthPage({ initialTab = "signin" }: AuthPageProps) {
         toast.success("Check your email", {
           description: `We sent a code to ${data.emailMasked}. Enter it to finish setting up your account.`,
         });
-        if (data.previewCode) {
-          toast.info(`Dev code: ${data.previewCode}`);
-        }
         navigate("/verify-email-code", { replace: true });
         return;
       }

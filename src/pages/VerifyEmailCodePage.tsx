@@ -33,7 +33,7 @@ function nextPathAfterAuth(sessionUser: PublicUser | undefined | null): string {
 }
 
 const OTP_LENGTH = 6;
-const DEFAULT_OTP_TTL_MINUTES = 5;
+const DEFAULT_OTP_TTL_MINUTES = 10;
 
 function normalizeEmail(value: string): string {
   return value.trim().toLowerCase();
@@ -176,16 +176,6 @@ export default function VerifyEmailCodePage() {
       setTtlMinutes(Math.max(1, Math.ceil(result.expiresInSeconds / 60)));
       setDigits(Array.from({ length: OTP_LENGTH }, () => ""));
       inputRefs.current[0]?.focus();
-      const deliveredInbox =
-        result.deliveryMode === "smtp" || result.deliveryMode === "resend";
-      toast.success("Verification code sent", {
-        description: deliveredInbox
-          ? `Check ${result.emailMasked} — the code was sent to that inbox.`
-          : "The server is not sending real email yet (set RESEND_API_KEY or SMTP_* in the API .env). Check server logs or the dev preview toast.",
-      });
-      if (result.previewCode) {
-        toast.info(`Dev code: ${result.previewCode}`);
-      }
     } catch (sendError: unknown) {
       const wait = getApiErrorResendAfterSeconds(sendError);
       if (wait != null) {
